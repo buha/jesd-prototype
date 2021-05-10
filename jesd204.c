@@ -3,19 +3,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include "jesd204-topo.h"
 
 #define ARRAY_SIZE(x) \
 	(sizeof(x) / sizeof((x)[0]))
-
-struct jesd204_dev {
-	char *name;
-	bool top;
-	bool sysref_provider;
-	struct jesd204_dev **inputs;
-	uint16_t inputs_count;
-};
-struct jesd204_link {
-};
 
 enum jesd204_state_op_reason {
 	JESD204_STATE_OP_REASON_INIT,
@@ -214,10 +205,31 @@ typedef int (*jesd204_link_cb)(struct jesd204_dev *jdev,
 			       enum jesd204_state_op_reason,
 			       struct jesd204_link *lnk);
 
+static int _init(struct jesd204_dev *jdev, void *arg)
+{
+	enum jesd204_dev_op *op = (enum jesd204_dev_op *)arg;
+	if (jesd204_ad9081_init.state_ops[*op].per_device)
+		return jesd204_ad9081_init.state_ops[*op].per_device(jdev, JESD204_STATE_OP_REASON_INIT);
+	return 0;
+}
+
+int jesd204_init(struct jesd204_dev *jdev) {
+	int ret;
+	enum jesd204_dev_op op;
+
+	for (op = 0; op < __JESD204_MAX_OPS; op++) {
+		ret = jtopo_for_all(jdev, _init, (void *)&op);
+		if (ret < 0)
+			return ret;
+	}
+	return ret;
+}
+
 int main(void)
 {
-	enum jesd204_dev_op op;
+/*	enum jesd204_dev_op op;
 	uint16_t devi;
+	struct jesd204_link rx, tx;
 	struct jesd204_dev axi_ad9081_core_rx = {
 		.name = "axi_ad9081_core_rx",
 	};
@@ -241,9 +253,44 @@ int main(void)
 		for (devi = 0; devi < jdev.inputs_count; devi++) {
 			if (jesd204_ad9081_init.state_ops[op].per_device)
 				jesd204_ad9081_init.state_ops[op].per_device(jdev.inputs[devi], JESD204_STATE_OP_REASON_INIT);
+			if (jesd204_ad9081_init.state_ops[op].per_link)
+				jesd204_ad9081_init.state_ops[op].per_link(jdev.inputs[devi], JESD204_STATE_OP_REASON_INIT, ... link ...);
 		}
 	};
+*/
+	struct jesd204_dev *jdev;
+	struct jesd204_dev_info jdev_info;
+	jdev = jtopo_device("trx0_ad9081", NULL, &jdev_info);
+	if (jdev == NULL)
+		goto error;
 
+	struct jesd204_dev *axi_ad9081_core_rx;
+	struct jesd204_dev_info axi_ad9081_core_rx_info;
+	axi_ad9081_core_rx = jtopo_device("axi_ad9081_core_rx", jdev, &axi_ad9081_core_rx_info);
+	if (axi_ad9081_core_rx == NULL)
+		goto error;
+
+/*	struct jesd204_dev *dummy;
+	struct jesd204_dev_info dummy_info;
+	dummy = jtopo_device("dummy", axi_ad9081_core_rx, &dummy_info);
+	if (dummy == NULL)
+		goto error;
+	struct jesd204_dev *dummy2;
+	struct jesd204_dev_info dummy2_info;
+	dummy2 = jtopo_device("dummy2", axi_ad9081_core_rx, &dummy2_info);
+	if (dummy2 == NULL)
+		goto error;*/
+
+	struct jesd204_dev *axi_ad9081_core_tx;
+	struct jesd204_dev_info axi_ad9081_core_tx_info;
+	axi_ad9081_core_tx = jtopo_device("axi_ad9081_core_tx", jdev, &axi_ad9081_core_tx_info);
+	if (axi_ad9081_core_tx == NULL)
+		goto error;
+
+	jesd204_init(jdev);
+	
+	jtopo_delete(jdev);
+error:
 	printf("Bye\n");
 
 	return 0;

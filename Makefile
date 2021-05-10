@@ -1,12 +1,20 @@
-EXEC = $(shell basename $(CURDIR))
-SYMBOLS =
-INC =
-CFLAGS = -O0 $(SYMBOLS) $(INC)
+CC = gcc
+CFLAGS = -Wall -g
+LDFLAGS = 
+OBJDIR=build
 
-all: $(EXEC)
+SRC = jesd204.c \
+	jesd204-topo.c
 
-$(EXEC): $(shell basename $(CURDIR)).c
-	$(CC) $+ $(CFLAGS) -o $(EXEC)
+$(OBJDIR)/%.o: %.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
+all: jesd204
+
+jesd204: $(patsubst %.c,$(OBJDIR)/%.o,$(SRC))
+	$(CC) $(LDFLAGS) $^ -o $@
+
+.PHONY: clean
 clean:
-	rm -rf $(EXEC)
+	rm -r $(OBJDIR)
