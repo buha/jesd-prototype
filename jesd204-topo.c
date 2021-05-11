@@ -10,8 +10,8 @@ static struct jesd204_dev * _jtopo_top_device(struct jesd204_dev *dev)
 	if (!dev)
 		return NULL;
 
-	while(devi->output)
-		devi = devi->output;
+	while(devi->outputs_count)
+		devi = devi->outputs[0];
 	
 	return devi;
 }
@@ -30,19 +30,18 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 		return NULL;
 
 	dev->name = name;
-	dev->output = output;
 	dev->info = info;
 	dev->id = id++;
 
-	if (dev->output) {
-		uint32_t new_inputs_count = dev->output->inputs_count + 1;
-		struct jesd204_dev **inputs = realloc(dev->output->inputs,
+	if (output) {
+		uint32_t new_inputs_count = output->inputs_count + 1;
+		struct jesd204_dev **inputs = realloc(output->inputs,
 			new_inputs_count * sizeof(struct jesd204_dev));
 		if (!inputs)
 			goto error;
-		dev->output->inputs = inputs;
-		dev->output->inputs[dev->output->inputs_count] = dev;
-		dev->output->inputs_count = new_inputs_count;
+		output->inputs = inputs;
+		output->inputs[output->inputs_count] = dev;
+		output->inputs_count = new_inputs_count;
 	}
 
 	return dev;

@@ -10,7 +10,8 @@ struct jesd204_dev {
 	const char *name;
 	struct jesd204_dev **inputs;
 	uint16_t inputs_count;
-	struct jesd204_dev *output;
+	struct jesd204_dev **outputs;
+	uint16_t outputs_count;
 	struct jesd204_dev_info *info;
 };
 
