@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include "jesd204-topo.h"
 
 #define ARRAY_SIZE(x) \
@@ -182,41 +183,49 @@ typedef int (*jesd204_link_cb)(struct jesd204_dev *jdev,
 			       enum jesd204_state_op_reason,
 			       struct jesd204_link *lnk);
 
-static int _init(struct jesd204_dev *jdev, void *arg)
+struct jesd204_init_arg {
+	const struct jesd204_dev_data *data;
+	enum jesd204_dev_op op;
+	enum jesd204_state_op_reason reason;
+};
+
+static int _xinit(struct jesd204_dev *jdev, void *arg)
 {
-	enum jesd204_dev_op *op = (enum jesd204_dev_op *)arg;
-	if (*op == JESD204_OP_OPT_SETUP_STAGE2)
-		return -1;
-	
-	if (jesd204_ad9081_init.state_ops[*op].per_device)
-		return jesd204_ad9081_init.state_ops[*op].per_device(jdev, JESD204_STATE_OP_REASON_INIT);
+	struct jesd204_init_arg *iarg = (struct jesd204_init_arg *)arg;
+	enum jesd204_dev_op op = iarg->op;
+	enum jesd204_state_op_reason reason = iarg->reason;
+
+	if (iarg->data->state_ops[op].per_device)
+		return iarg->data->state_ops[op].per_device(jdev, reason);
 	return 0;
 }
 
-static int _uninit(struct jesd204_dev *jdev, void *arg)
-{
-	enum jesd204_dev_op *op = (enum jesd204_dev_op *)arg;
-	if (jesd204_ad9081_init.state_ops[*op].per_device)
-		return jesd204_ad9081_init.state_ops[*op].per_device(jdev, JESD204_STATE_OP_REASON_UNINIT);
-	return 0;
-}
-
-int jesd204_init(struct jesd204_dev *jdev) {
+int jesd204_init(struct jesd204_dev *jdev, const struct jesd204_dev_data *init_data) {
 	int ret;
 	enum jesd204_dev_op op;
+	struct jesd204_init_arg arg;
+
+	if (!init_data)
+		return -EINVAL;
+
+	arg.data = init_data;
+	arg.reason = JESD204_STATE_OP_REASON_INIT;
 
 	for (op = 0; op < __JESD204_MAX_OPS; op++) {
-		ret = jtopo_for_all(jdev, _init, (void *)&op);
+		arg.op = op;
+		ret = jtopo_for_all(jdev, _xinit, (void *)&arg);
 		if (ret < 0)
 			goto uninit;
 	}
 	return ret;
 uninit:
+	arg.reason = JESD204_STATE_OP_REASON_UNINIT;
 	for (; op > 0; op--) {
+		arg.op = op;
 		// Rolling back doesn't stop even when any of the states errors out;
 		// it is of higher priority to reach back to IDLE state, than to stop when rolling back.
 		// Therefore, ignore the error code.
-		jtopo_for_all(jdev, _uninit, (void *)&op);
+		jtopo_for_all(jdev, _xinit, (void *)&arg);
 	}
 	return 0;
 }
@@ -286,7 +295,7 @@ int main(void)
 	if (axi_ad9081_core_tx == NULL)
 		goto error;
 
-	jesd204_init(jdev);
+	jesd204_init(jdev, &jesd204_ad9081_init);
 	
 	jtopo_delete(jdev);
 error:
