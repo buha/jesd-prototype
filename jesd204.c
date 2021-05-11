@@ -267,6 +267,14 @@ int main(void)
 	if (axi_ad9081_core_tx == NULL)
 		goto error;
 
+	struct jesd204_dev *hmc7044;
+	struct jesd204_dev_info hmc7044_info;
+	hmc7044 = jtopo_device("hmc7044", axi_ad9081_core_rx, &hmc7044_info);
+	if (hmc7044 == NULL)
+		goto error;
+	
+	jtopo_connect(hmc7044, axi_ad9081_core_tx);
+
 	jesd204_init(jdev, &jesd204_ad9081_init);
 	
 	jtopo_delete(jdev);
