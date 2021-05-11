@@ -29,25 +29,38 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 	if (!dev)
 		return NULL;
 
+	dev->outputs = calloc(1, sizeof(struct jesd204_dev *));
+	if (!dev->outputs)
+		goto error1;
+
 	dev->name = name;
 	dev->info = info;
 	dev->id = id++;
+	dev->outputs[0] = output;
 
 	if (output) {
 		uint32_t new_inputs_count = output->inputs_count + 1;
 		struct jesd204_dev **inputs = realloc(output->inputs,
-			new_inputs_count * sizeof(struct jesd204_dev));
+			new_inputs_count * sizeof(struct jesd204_dev *));
 		if (!inputs)
-			goto error;
+			goto error2;
 		output->inputs = inputs;
 		output->inputs[output->inputs_count] = dev;
 		output->inputs_count = new_inputs_count;
 	}
 
 	return dev;
-error:
+error2:
+	free(dev->outputs);
+error1:
 	free(dev);
 	return NULL;
+}
+
+struct jesd204_dev * jtopo_connect(struct jesd204_dev *out,
+		     		   struct jesd204_dev *in)
+{
+
 }
 
 int jtopo_for_all(struct jesd204_dev *dev, jtopo_iter_cb callback, void *arg)
