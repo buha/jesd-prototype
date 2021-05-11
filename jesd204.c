@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include "jesd204-topo.h"
 
 #define ARRAY_SIZE(x) \
@@ -70,10 +71,7 @@ enum jesd204_state_change_result {
 int ad9081_jesd204_uninit(struct jesd204_dev *jdev,
 			    enum jesd204_state_op_reason reason)
 {
-	if (reason != JESD204_STATE_OP_REASON_UNINIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -82,10 +80,7 @@ static int ad9081_jesd204_link_init(struct jesd204_dev *jdev,
 		enum jesd204_state_op_reason reason,
 		struct jesd204_link *lnk)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -94,10 +89,7 @@ static int ad9081_jesd204_clks_enable(struct jesd204_dev *jdev,
 		enum jesd204_state_op_reason reason,
 		struct jesd204_link *lnk)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -106,10 +98,7 @@ static int ad9081_jesd204_link_enable(struct jesd204_dev *jdev,
 		enum jesd204_state_op_reason reason,
 		struct jesd204_link *lnk)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -118,10 +107,7 @@ static int ad9081_jesd204_link_running(struct jesd204_dev *jdev,
 		enum jesd204_state_op_reason reason,
 		struct jesd204_link *lnk)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -129,10 +115,7 @@ static int ad9081_jesd204_link_running(struct jesd204_dev *jdev,
 static int ad9081_jesd204_setup_stage1(struct jesd204_dev *jdev,
 					 enum jesd204_state_op_reason reason)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -140,10 +123,7 @@ static int ad9081_jesd204_setup_stage1(struct jesd204_dev *jdev,
 static int ad9081_jesd204_setup_stage2(struct jesd204_dev *jdev,
 					 enum jesd204_state_op_reason reason)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -151,10 +131,7 @@ static int ad9081_jesd204_setup_stage2(struct jesd204_dev *jdev,
 static int ad9081_jesd204_setup_stage3(struct jesd204_dev *jdev,
 					 enum jesd204_state_op_reason reason)
 {
-	if (reason != JESD204_STATE_OP_REASON_INIT)
-		return JESD204_STATE_CHANGE_DONE;
-
-	printf("%s: %s\n", jdev->name, __FUNCTION__);
+	printf("%s: %s %s\n", jdev->name, __FUNCTION__, !reason ? "init" : "uninit");
 
 	return 0;
 }
@@ -208,8 +185,19 @@ typedef int (*jesd204_link_cb)(struct jesd204_dev *jdev,
 static int _init(struct jesd204_dev *jdev, void *arg)
 {
 	enum jesd204_dev_op *op = (enum jesd204_dev_op *)arg;
+	if (*op == JESD204_OP_OPT_SETUP_STAGE2)
+		return -1;
+	
 	if (jesd204_ad9081_init.state_ops[*op].per_device)
 		return jesd204_ad9081_init.state_ops[*op].per_device(jdev, JESD204_STATE_OP_REASON_INIT);
+	return 0;
+}
+
+static int _uninit(struct jesd204_dev *jdev, void *arg)
+{
+	enum jesd204_dev_op *op = (enum jesd204_dev_op *)arg;
+	if (jesd204_ad9081_init.state_ops[*op].per_device)
+		return jesd204_ad9081_init.state_ops[*op].per_device(jdev, JESD204_STATE_OP_REASON_UNINIT);
 	return 0;
 }
 
@@ -220,9 +208,17 @@ int jesd204_init(struct jesd204_dev *jdev) {
 	for (op = 0; op < __JESD204_MAX_OPS; op++) {
 		ret = jtopo_for_all(jdev, _init, (void *)&op);
 		if (ret < 0)
-			return ret;
+			goto uninit;
 	}
 	return ret;
+uninit:
+	for (; op > 0; op--) {
+		// Rolling back doesn't stop even when any of the states errors out;
+		// it is of higher priority to reach back to IDLE state, than to stop when rolling back.
+		// Therefore, ignore the error code.
+		jtopo_for_all(jdev, _uninit, (void *)&op);
+	}
+	return 0;
 }
 
 int main(void)
@@ -270,7 +266,9 @@ int main(void)
 	if (axi_ad9081_core_rx == NULL)
 		goto error;
 
-/*	struct jesd204_dev *dummy;
+	/*
+	// 2 Dummy devices under axi_ad9081_core_rx 
+	struct jesd204_dev *dummy;
 	struct jesd204_dev_info dummy_info;
 	dummy = jtopo_device("dummy", axi_ad9081_core_rx, &dummy_info);
 	if (dummy == NULL)
@@ -279,7 +277,8 @@ int main(void)
 	struct jesd204_dev_info dummy2_info;
 	dummy2 = jtopo_device("dummy2", axi_ad9081_core_rx, &dummy2_info);
 	if (dummy2 == NULL)
-		goto error;*/
+		goto error;
+	*/
 
 	struct jesd204_dev *axi_ad9081_core_tx;
 	struct jesd204_dev_info axi_ad9081_core_tx_info;
