@@ -24,4 +24,5 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 		     struct jesd204_dev_info *info);
 int jtopo_connect(struct jesd204_dev *out, struct jesd204_dev *in);
 int jtopo_for_all(struct jesd204_dev *dev, jtopo_iter_cb callback, void *arg);
+unsigned int jtopo_count(struct jesd204_dev *dev);
 void jtopo_delete(struct jesd204_dev *dev);

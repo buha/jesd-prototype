@@ -133,8 +133,24 @@ static int _delete_dev(struct jesd204_dev *dev, void *arg)
 	return 0;
 }
 
+static int _find_max_id(struct jesd204_dev *dev, void *arg)
+{
+	unsigned int *count = (unsigned int *)arg;
+	if (dev->id > *count)
+		*count = dev->id;
+	return 0;
+}
+
 void jtopo_delete(struct jesd204_dev *dev)
 {
 	struct jesd204_dev *top = _jtopo_top_device(dev);
 	jtopo_for_all(top, _delete_dev, NULL);
+}
+
+unsigned int jtopo_count(struct jesd204_dev *dev)
+{
+	unsigned int count;
+	struct jesd204_dev *top = _jtopo_top_device(dev);
+	jtopo_for_all(top, _find_max_id, &count);
+	return count+1;
 }
