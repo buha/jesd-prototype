@@ -211,6 +211,8 @@ int jesd204_init(struct jesd204_dev *jdev, const struct jesd204_dev_data *init_d
 	arg.data = init_data;
 	arg.reason = JESD204_STATE_OP_REASON_INIT;
 
+	// TODO: add retry mechanism based on init_data->num_retries
+
 	for (op = 0; op < __JESD204_MAX_OPS; op++) {
 		arg.op = op;
 		ret = jtopo_for_all(jdev, _xinit, (void *)&arg);
@@ -232,39 +234,9 @@ uninit:
 
 int main(void)
 {
-/*	enum jesd204_dev_op op;
-	uint16_t devi;
-	struct jesd204_link rx, tx;
-	struct jesd204_dev axi_ad9081_core_rx = {
-		.name = "axi_ad9081_core_rx",
-	};
-	struct jesd204_dev axi_ad9081_core_tx = {
-		.name = "axi_ad9081_core_tx",
-	};
-	struct jesd204_dev *jdev_inputs[] = {
-		&axi_ad9081_core_rx,
-		&axi_ad9081_core_tx
-	};
-	struct jesd204_dev jdev = {
-		.name = "trx0_ad9081",
-		.top = true,
-		.inputs = jdev_inputs,
-		.inputs_count = ARRAY_SIZE(jdev_inputs),
-	};
-
-	printf("Hello\n");
-
-	for (op = 0; op < __JESD204_MAX_OPS; op++) {
-		for (devi = 0; devi < jdev.inputs_count; devi++) {
-			if (jesd204_ad9081_init.state_ops[op].per_device)
-				jesd204_ad9081_init.state_ops[op].per_device(jdev.inputs[devi], JESD204_STATE_OP_REASON_INIT);
-			if (jesd204_ad9081_init.state_ops[op].per_link)
-				jesd204_ad9081_init.state_ops[op].per_link(jdev.inputs[devi], JESD204_STATE_OP_REASON_INIT, ... link ...);
-		}
-	};
-*/
 	struct jesd204_dev *jdev;
 	struct jesd204_dev_info jdev_info;
+	// Top-level device has no output, hence we call it with NULL.
 	jdev = jtopo_device("trx0_ad9081", NULL, &jdev_info);
 	if (jdev == NULL)
 		goto error;
