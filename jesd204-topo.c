@@ -118,8 +118,6 @@ static int _delete_dev(struct jesd204_dev *dev, void *arg)
 {
 	unsigned int o, i;
 	printf("%s: %s id:%d\n", __FUNCTION__, dev->name, dev->id);
-	if (dev->inputs)
-		free(dev->inputs);
 	
 	// We go up the tree.
 	// References to dev higher in the tree should reflect that the memory was freed.
@@ -129,6 +127,8 @@ static int _delete_dev(struct jesd204_dev *dev, void *arg)
 				dev->outputs[o]->inputs[i] = NULL;
 		}
 
+	free(dev->inputs);
+	free(dev->outputs);
 	free(dev);
 	return 0;
 }
