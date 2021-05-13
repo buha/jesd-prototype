@@ -1,6 +1,47 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define ARRAY_SIZE(x) \
+	(sizeof(x) / sizeof((x)[0]))
+
+enum jesd204_state_op_reason {
+	JESD204_STATE_OP_REASON_INIT,
+	JESD204_STATE_OP_REASON_UNINIT,
+};
+
+enum jesd204_dev_op {
+	JESD204_OP_DEVICE_INIT,
+	JESD204_OP_LINK_INIT,
+	JESD204_OP_LINK_SUPPORTED,
+	JESD204_OP_LINK_PRE_SETUP,
+	JESD204_OP_CLK_SYNC_STAGE1,
+	JESD204_OP_CLK_SYNC_STAGE2,
+	JESD204_OP_CLK_SYNC_STAGE3,
+	JESD204_OP_LINK_SETUP,
+	JESD204_OP_OPT_SETUP_STAGE1,
+	JESD204_OP_OPT_SETUP_STAGE2,
+	JESD204_OP_OPT_SETUP_STAGE3,
+	JESD204_OP_OPT_SETUP_STAGE4,
+	JESD204_OP_OPT_SETUP_STAGE5,
+	JESD204_OP_CLOCKS_ENABLE,
+	JESD204_OP_LINK_ENABLE,
+	JESD204_OP_LINK_RUNNING,
+	JESD204_OP_OPT_POST_RUNNING_STAGE,
+
+	__JESD204_MAX_OPS,
+};
+
+enum jesd204_state_op_mode {
+	JESD204_STATE_OP_MODE_PER_LINK,
+	JESD204_STATE_OP_MODE_PER_DEVICE,
+};
+
+enum jesd204_state_change_result {
+	JESD204_STATE_CHANGE_ERROR = -1,
+	JESD204_STATE_CHANGE_DEFER = 0,
+	JESD204_STATE_CHANGE_DONE,
+};
+
 struct jesd204_dev_info {
 	bool sysref_provider;
 };
@@ -18,7 +59,7 @@ struct jesd204_sysref {
 	uint16_t			lmfc_offset;
 };
 
-struct jesd204_link {
+struct jesd204_link_param {
 	uint64_t sample_rate;
 	uint32_t sample_rate_div;
 
@@ -57,6 +98,12 @@ struct jesd204_link {
 	uint8_t dac_phase_adj;
 };
 
+struct jesd204_link {
+	uint16_t link_id;
+	const char *name;
+	struct jesd204_link_param param;
+};
+
 struct jesd204_dev {
 	uint32_t id;
 	const char *name;
@@ -69,11 +116,41 @@ struct jesd204_dev {
 	struct jesd204_dev_info *info;
 };
 
+
+typedef int (*jesd204_dev_cb)(struct jesd204_dev *jdev,
+			      enum jesd204_state_op_reason reason);
+
+typedef int (*jesd204_link_cb)(struct jesd204_dev *jdev,
+			       enum jesd204_state_op_reason,
+			       struct jesd204_link *lnk);
+
+struct jesd204_state_op {
+	enum jesd204_state_op_mode	mode;
+	jesd204_dev_cb			per_device;
+	jesd204_link_cb			per_link;
+	bool				post_state_sysref;
+};
+
+struct jesd204_dev_data {
+	size_t					sizeof_priv;
+	unsigned int				max_num_links;
+	unsigned int				num_retries;
+	struct jesd204_state_op			state_ops[__JESD204_MAX_OPS];
+};
+
+struct jesd204_init_arg {
+	const struct jesd204_dev_data *data;
+	enum jesd204_dev_op op;
+	enum jesd204_state_op_reason reason;
+	bool *per_device_ran;
+	struct jesd204_link *link;
+};
+
 typedef int (*jtopo_iter_cb)(struct jesd204_dev *dev, void *arg);
 
+int jtopo_link(const char *name, struct jesd204_link **link, struct jesd204_link_param param);
 struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 		     struct jesd204_link *link, struct jesd204_dev_info *info);
 int jtopo_connect(struct jesd204_dev *out, struct jesd204_dev *in, struct jesd204_link *link);
-int jtopo_for_all(struct jesd204_dev *dev, jtopo_iter_cb callback, void *arg);
-unsigned int jtopo_count(struct jesd204_dev *dev);
 void jtopo_delete(struct jesd204_dev *dev);
+int jesd204_init(struct jesd204_dev *jdev, const struct jesd204_dev_data *init_data);

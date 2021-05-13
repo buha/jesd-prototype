@@ -2,7 +2,46 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 #include "jesd204-topo.h"
+
+static struct jesd204_link ** _links = NULL;
+static uint16_t _links_count = 0;
+static struct jesd204_dev ** _devices = NULL;
+static uint16_t _devices_count = 0;
+
+int jtopo_link(const char *name, struct jesd204_link **link, struct jesd204_link_param param)
+{
+	struct jesd204_link ** links;
+	struct jesd204_link * lnk;
+	uint16_t new_links_count;
+
+	// TODO: Test each link init param for correct range/format.
+	// Potentially return -EINVAL here.
+
+	lnk = malloc(sizeof(struct jesd204_link));
+	if (!lnk)
+		return -ENOMEM;
+
+	lnk->name = name;
+	lnk->link_id = _links_count;
+	lnk->param = param;
+
+	new_links_count = _links_count + 1;
+	links = realloc(_links, new_links_count * sizeof(struct jesd204_link *));
+	if (!links)
+		goto error1;
+
+	_links = links;
+	_links[_links_count] = lnk;
+	_links_count = new_links_count;
+
+	*link = lnk;
+	return 0;
+error1:
+	free(lnk);
+	return -ENOMEM;
+}
 
 static struct jesd204_dev * _jtopo_top_device(struct jesd204_dev *dev)
 {
@@ -21,7 +60,8 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 		     struct jesd204_link *link, struct jesd204_dev_info *info)
 {
 	struct jesd204_dev *dev;
-	static uint32_t id = 0;
+	struct jesd204_dev **devices;
+	uint32_t new_devices_count;
 	
 	if (!info)
 		return NULL;
@@ -29,21 +69,28 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 	dev = calloc(1, sizeof(struct jesd204_dev));
 	if (!dev)
 		return NULL;
+	
+	new_devices_count = _devices_count + 1;
+	devices = realloc(_devices, new_devices_count * sizeof(struct jesd204_dev*));
+	if (!devices)
+		goto error1;
 
 	dev->outputs = calloc(1, sizeof(struct jesd204_dev *));
 	if (!dev->outputs)
-		goto error1;
-
-	dev->links = calloc(1, sizeof(struct jesd204_link *));
-	if (!dev->links)
 		goto error2;
+
+	if (link) {
+		dev->links = calloc(1, sizeof(struct jesd204_link *));
+		if (!dev->links)
+			goto error3;
+		dev->links[0] = link;
+		dev->links_count = 1;
+	}
 
 	dev->name = name;
 	dev->info = info;
-	dev->id = id++;
+	dev->id = _devices_count;
 	dev->outputs[0] = output;
-	if (dev->links)
-		dev->links_count = 1;
 
 	if (output) {
 		dev->outputs_count = 1;
@@ -51,17 +98,23 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 		struct jesd204_dev **inputs = realloc(output->inputs,
 			new_inputs_count * sizeof(struct jesd204_dev *));
 		if (!inputs)
-			goto error3;
+			goto error4;
 		output->inputs = inputs;
 		output->inputs[output->inputs_count] = dev;
 		output->inputs_count = new_inputs_count;
 	}
 
+	_devices = devices;
+	_devices[_devices_count] = dev;
+	_devices_count = new_devices_count;
+
 	return dev;
-error3:
+error4:
 	free(dev->links);
-error2:
+error3:
 	free(dev->outputs);
+error2:
+	free(devices);
 error1:
 	free(dev);
 	return NULL;
@@ -118,7 +171,7 @@ error1:
 	return ret;
 }
 
-int jtopo_for_all(struct jesd204_dev *dev, jtopo_iter_cb callback, void *arg)
+static inline int _jtopo_for_all(struct jesd204_dev *dev, jtopo_iter_cb callback, void *arg)
 {
 	int ret;
 	uint16_t i;
@@ -126,32 +179,18 @@ int jtopo_for_all(struct jesd204_dev *dev, jtopo_iter_cb callback, void *arg)
 	if (!dev || !callback)
 		return 0;
 
-	if (dev->inputs_count)
-		for (i = 0; i < dev->inputs_count; i++) {
-			ret = jtopo_for_all(dev->inputs[i], callback, arg);
-			if (ret < 0)
-				return ret;
-		}
-
-	ret = callback(dev, arg);
+	for (i = 0; i < _devices_count; i++) {
+		// printf("dev %d\n", i);
+		ret = callback(_devices[i], arg);
+		if (ret < 0)
+			break;
+	}
 
 	return ret;
 }
 
 static int _delete_dev(struct jesd204_dev *dev, void *arg)
 {
-	unsigned int o, i;
-	printf("%s: %s id:%d\n", __FUNCTION__, dev->name, dev->id);
-	
-	// We go up the tree.
-	// References to dev higher in the tree should reflect that the memory was freed.
-	for(o = 0; o < dev->outputs_count; o++)
-	 	for(i = 0; i < dev->outputs[o]->inputs_count; i++) {
-			 if (dev->outputs[o]->inputs[i] &&
-			 	dev->outputs[o]->inputs[i]->id == dev->id)
-				dev->outputs[o]->inputs[i] = NULL;
-		}
-
 	if (dev->inputs)
 		free(dev->inputs);
 	if (dev->outputs)
@@ -165,21 +204,104 @@ static int _delete_dev(struct jesd204_dev *dev, void *arg)
 void jtopo_delete(struct jesd204_dev *dev)
 {
 	struct jesd204_dev *top = _jtopo_top_device(dev);
-	jtopo_for_all(top, _delete_dev, NULL);
+	_jtopo_for_all(top, _delete_dev, NULL);
+	free(_links);
 }
 
-static int _find_max_id(struct jesd204_dev *dev, void *arg)
+static bool _is_in_link(struct jesd204_dev *dev, struct jesd204_link *link)
 {
-	unsigned int *count = (unsigned int *)arg;
-	if (dev->id > *count)
-		*count = dev->id;
-	return 0;
+	uint16_t l;
+
+	if (!dev || !link)
+		return false;
+
+	for (l = 0; l < dev->links_count; l++)
+	{
+		if (dev->links[l] == link)
+			return true;
+	}
+
+	return false;
 }
 
-unsigned int jtopo_count(struct jesd204_dev *dev)
+static int _xinit(struct jesd204_dev *jdev, void *arg)
 {
-	unsigned int count;
-	struct jesd204_dev *top = _jtopo_top_device(dev);
-	jtopo_for_all(top, _find_max_id, &count);
-	return count+1;
+	struct jesd204_init_arg *iarg = (struct jesd204_init_arg *)arg;
+	enum jesd204_dev_op op = iarg->op;
+	enum jesd204_state_op_reason reason = iarg->reason;
+
+	switch(iarg->data->state_ops[op].mode) {
+	case JESD204_STATE_OP_MODE_PER_DEVICE:
+		if (!iarg->data->state_ops[op].per_device)
+			return JESD204_STATE_CHANGE_DONE;
+		
+		if (iarg->per_device_ran[jdev->id])
+			return JESD204_STATE_CHANGE_DONE;
+
+		iarg->per_device_ran[jdev->id] = true;
+		return iarg->data->state_ops[op].per_device(jdev, reason);
+	case JESD204_STATE_OP_MODE_PER_LINK:
+		if (!iarg->data->state_ops[op].per_link)
+			return JESD204_STATE_CHANGE_DONE;
+		if(!_is_in_link(jdev, iarg->link))
+			return JESD204_STATE_CHANGE_DONE;
+
+		return iarg->data->state_ops[op].per_link(jdev, reason, iarg->link);
+	default:
+		return -EINVAL;
+	};
+}
+
+int jesd204_init(struct jesd204_dev *jdev, const struct jesd204_dev_data *init_data) {
+	int ret;
+	uint16_t l;
+	enum jesd204_dev_op op;
+	struct jesd204_init_arg arg;
+
+	if (!init_data)
+		return -EINVAL;
+
+	arg.per_device_ran = calloc(_devices_count, sizeof(bool));
+	if (!arg.per_device_ran)
+		return -ENOMEM;
+
+	arg.data = init_data;
+	arg.reason = JESD204_STATE_OP_REASON_INIT;
+
+	// TODO: add retry mechanism based on init_data->num_retries
+
+	for (op = 0; op < __JESD204_MAX_OPS; op++) {
+		printf("op %d\n", op);
+		for(l = 0; l < _links_count; l++) {
+			//printf("link %d\n", l);
+			arg.op = op;
+			arg.link = _links[l];
+			ret = _jtopo_for_all(jdev, _xinit, (void *)&arg);
+			if (ret < 0)
+				goto uninit;
+		}
+		// reset the ran flags after each op.
+		memset(arg.per_device_ran, 0, _devices_count);
+	}
+
+	free(arg.per_device_ran);
+	return ret;
+uninit:
+	arg.reason = JESD204_STATE_OP_REASON_UNINIT;
+	for (; op > 0; op--) {
+		for(l = 0; l < _links_count; l++) {
+			arg.op = op;
+			arg.link = _links[l];
+			// Rolling back doesn't stop even when any of the states errors out;
+			// it is of higher priority to reach back to IDLE state, than to stop when rolling back.
+			// Therefore, ignore the error code.
+			_jtopo_for_all(jdev, _xinit, (void *)&arg);
+		}
+
+		// reset the ran flags after each op.
+		memset(arg.per_device_ran, 0, _devices_count);
+	}
+
+	free(arg.per_device_ran);
+	return ret;
 }
