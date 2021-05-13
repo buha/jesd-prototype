@@ -18,7 +18,7 @@ static struct jesd204_dev * _jtopo_top_device(struct jesd204_dev *dev)
 }
 
 struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
-		     struct jesd204_dev_info *info)
+		     struct jesd204_link *link, struct jesd204_dev_info *info)
 {
 	struct jesd204_dev *dev;
 	static uint32_t id = 0;
@@ -34,23 +34,32 @@ struct jesd204_dev * jtopo_device(const char *name, struct jesd204_dev *output,
 	if (!dev->outputs)
 		goto error1;
 
+	dev->links = calloc(1, sizeof(struct jesd204_link *));
+	if (!dev->links)
+		goto error2;
+
 	dev->name = name;
 	dev->info = info;
 	dev->id = id++;
 	dev->outputs[0] = output;
+	if (dev->links)
+		dev->links_count = 1;
 
 	if (output) {
+		dev->outputs_count = 1;
 		uint32_t new_inputs_count = output->inputs_count + 1;
 		struct jesd204_dev **inputs = realloc(output->inputs,
 			new_inputs_count * sizeof(struct jesd204_dev *));
 		if (!inputs)
-			goto error2;
+			goto error3;
 		output->inputs = inputs;
 		output->inputs[output->inputs_count] = dev;
 		output->inputs_count = new_inputs_count;
 	}
 
 	return dev;
+error3:
+	free(dev->links);
 error2:
 	free(dev->outputs);
 error1:
@@ -58,10 +67,10 @@ error1:
 	return NULL;
 }
 
-int jtopo_connect(struct jesd204_dev *out, struct jesd204_dev *in)
+int jtopo_connect(struct jesd204_dev *out, struct jesd204_dev *in, struct jesd204_link *link)
 {
 	int ret;
-	uint32_t new_outputs_count, new_inputs_count;
+	uint32_t new_outputs_count, new_inputs_count, new_links_count;
 
 	if (!out || !in)
 		return -EINVAL;
@@ -77,7 +86,20 @@ int jtopo_connect(struct jesd204_dev *out, struct jesd204_dev *in)
 		new_inputs_count * sizeof(struct jesd204_dev *));
 	if (!inputs) {
 		ret = -ENOMEM;
-		goto error;
+		goto error1;
+	}
+
+	if (link) {
+		new_links_count = out->links_count + 1;
+		struct jesd204_link **links = realloc(out->links,
+			new_links_count * sizeof(struct jesd204_link *));
+		if (!links) {
+			ret = -ENOMEM;
+			goto error2;
+		}
+		out->links = links;
+		out->links[out->links_count] = link;
+		out->links_count = new_links_count;
 	}
 
 	out->outputs = outputs;
@@ -89,7 +111,9 @@ int jtopo_connect(struct jesd204_dev *out, struct jesd204_dev *in)
 	in->inputs_count = new_inputs_count;
 
 	return 0;
-error:
+error2:
+	free(inputs);
+error1:
 	free(outputs);
 	return ret;
 }
@@ -123,14 +147,25 @@ static int _delete_dev(struct jesd204_dev *dev, void *arg)
 	// References to dev higher in the tree should reflect that the memory was freed.
 	for(o = 0; o < dev->outputs_count; o++)
 	 	for(i = 0; i < dev->outputs[o]->inputs_count; i++) {
-			 if (dev->outputs[o]->inputs[i]->id == dev->id)
+			 if (dev->outputs[o]->inputs[i] &&
+			 	dev->outputs[o]->inputs[i]->id == dev->id)
 				dev->outputs[o]->inputs[i] = NULL;
 		}
 
-	free(dev->inputs);
-	free(dev->outputs);
+	if (dev->inputs)
+		free(dev->inputs);
+	if (dev->outputs)
+		free(dev->outputs);
+	if (dev->links)
+		free(dev->links);
 	free(dev);
 	return 0;
+}
+
+void jtopo_delete(struct jesd204_dev *dev)
+{
+	struct jesd204_dev *top = _jtopo_top_device(dev);
+	jtopo_for_all(top, _delete_dev, NULL);
 }
 
 static int _find_max_id(struct jesd204_dev *dev, void *arg)
@@ -139,12 +174,6 @@ static int _find_max_id(struct jesd204_dev *dev, void *arg)
 	if (dev->id > *count)
 		*count = dev->id;
 	return 0;
-}
-
-void jtopo_delete(struct jesd204_dev *dev)
-{
-	struct jesd204_dev *top = _jtopo_top_device(dev);
-	jtopo_for_all(top, _delete_dev, NULL);
 }
 
 unsigned int jtopo_count(struct jesd204_dev *dev)

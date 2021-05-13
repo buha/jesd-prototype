@@ -268,14 +268,17 @@ int main(void)
 {
 	struct jesd204_dev *jdev;
 	struct jesd204_dev_info jdev_info;
+	struct jesd204_link rx, tx;
+
+
 	// Top-level device has no output, hence we call it with NULL.
-	jdev = jtopo_device("trx0_ad9081", NULL, &jdev_info);
+	jdev = jtopo_device("trx0_ad9081", NULL, NULL, &jdev_info);
 	if (jdev == NULL)
 		goto error;
 
 	struct jesd204_dev *axi_ad9081_core_rx;
 	struct jesd204_dev_info axi_ad9081_core_rx_info;
-	axi_ad9081_core_rx = jtopo_device("axi_ad9081_core_rx", jdev, &axi_ad9081_core_rx_info);
+	axi_ad9081_core_rx = jtopo_device("axi_ad9081_core_rx", jdev,  &rx, &axi_ad9081_core_rx_info);
 	if (axi_ad9081_core_rx == NULL)
 		goto error;
 
@@ -295,17 +298,17 @@ int main(void)
 
 	struct jesd204_dev *axi_ad9081_core_tx;
 	struct jesd204_dev_info axi_ad9081_core_tx_info;
-	axi_ad9081_core_tx = jtopo_device("axi_ad9081_core_tx", jdev, &axi_ad9081_core_tx_info);
+	axi_ad9081_core_tx = jtopo_device("axi_ad9081_core_tx", jdev, &tx, &axi_ad9081_core_tx_info);
 	if (axi_ad9081_core_tx == NULL)
 		goto error;
 
 	struct jesd204_dev *hmc7044;
 	struct jesd204_dev_info hmc7044_info;
-	hmc7044 = jtopo_device("hmc7044", axi_ad9081_core_rx, &hmc7044_info);
+	hmc7044 = jtopo_device("hmc7044", axi_ad9081_core_rx, &rx, &hmc7044_info);
 	if (hmc7044 == NULL)
 		goto error;
 	
-	jtopo_connect(hmc7044, axi_ad9081_core_tx);
+	jtopo_connect(hmc7044, axi_ad9081_core_tx, &tx);
 
 	jesd204_init(jdev, &jesd204_ad9081_init);
 	
